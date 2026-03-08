@@ -14,6 +14,7 @@ export interface Document {
   authorId: string;
   authorName: string;
   cells: Record<string, Cell>;
+  linkAccess: 'edit' | 'view'; // controls what the shared link allows
 }
 
 export interface Cell {
@@ -26,7 +27,12 @@ export interface Cell {
 export interface CellFormat {
   bold?: boolean;
   italic?: boolean;
-  color?: string;
+  underline?: boolean;
+  strikethrough?: boolean;
+  color?: string;        // text color
+  bgColor?: string;      // fill / background color
+  align?: 'left' | 'center' | 'right';
+  fontSize?: number;     // in px, default 13
 }
 
 export interface Presence {

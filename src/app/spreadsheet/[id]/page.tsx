@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AuthProvider, useAuth } from '../../context/AuthContext';
 import { subscribeToDocument, updateCell, updatePresence, removePresence, subscribeToPresence } from '../../firebase/firestore';
@@ -8,6 +8,7 @@ import { Document as AppDocument, Cell, Presence, WriteState } from '../../fireb
 import { SpreadsheetGrid } from '../../components/SpreadsheetGrid';
 import { Toolbar } from '../../components/Toolbar';
 import { PresenceList } from '../../components/PresenceList';
+import { ShareModal } from '../../components/ShareModal';
 import { evaluateFormula } from '../../utils/formulas';
 
 function SpreadsheetPageContent() {
@@ -21,6 +22,18 @@ function SpreadsheetPageContent() {
   const [presences, setPresences] = useState<Presence[]>([]);
   const [writeState, setWriteState] = useState<WriteState>({ status: 'saved' });
   const [mounted, setMounted] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
+
+  // Undo / Redo history — each entry is a snapshot of document.cells
+  const historyRef = useRef<Array<Record<string, Cell>>>([]);
+  const historyIndexRef = useRef<number>(-1);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  const syncHistoryState = () => {
+    setCanUndo(historyIndexRef.current > 0);
+    setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -28,9 +41,9 @@ function SpreadsheetPageContent() {
 
   useEffect(() => {
     console.log('SpreadsheetPage useEffect - User:', user?.displayName, 'AppDocument ID:', documentId);
-    
+
     if (loading) return;
-    
+
     if (!user) {
       console.log('No user found, redirecting to home');
       router.push('/');
@@ -48,7 +61,7 @@ function SpreadsheetPageContent() {
             cell.computedValue = evaluateFormula(cell.formula, evaluatedCells);
           }
         });
-        
+
         console.log('AppDocument with evaluated cells:', { ...doc, cells: evaluatedCells });
         setAppDocument({ ...doc, cells: evaluatedCells });
       } else {
@@ -70,7 +83,7 @@ function SpreadsheetPageContent() {
         userColor: user.color,
         lastSeen: new Date(),
       };
-      
+
       console.log('Setting up presence for user:', presence);
       updatePresence(documentId, presence);
 
@@ -93,13 +106,20 @@ function SpreadsheetPageContent() {
   const handleCellUpdate = useCallback(async (cellId: string, cell: Cell) => {
     if (!document || !user) return;
 
+    // Snapshot current state into history before applying the change
+    const prevCells = { ...document.cells };
+    const hist = historyRef.current.slice(0, historyIndexRef.current + 1);
+    hist.push(prevCells);
+    // Cap history at 100 entries
+    if (hist.length > 100) hist.shift();
+    historyRef.current = hist;
+    historyIndexRef.current = hist.length - 1;
+    syncHistoryState();
+
     setWriteState({ status: 'saving' });
 
     try {
-      // Update local state immediately for responsiveness
       const updatedCells = { ...document.cells, [cellId]: cell };
-      
-      // Evaluate formulas for all cells
       const evaluatedCells = { ...updatedCells };
       Object.keys(evaluatedCells).forEach(id => {
         const cellData = evaluatedCells[id];
@@ -107,18 +127,64 @@ function SpreadsheetPageContent() {
           cellData.computedValue = evaluateFormula(cellData.formula, evaluatedCells);
         }
       });
-
       setAppDocument({ ...document, cells: evaluatedCells });
-      
-      // Update in Firestore
       await updateCell(documentId, cellId, cell);
-      
       setWriteState({ status: 'saved', lastSaved: new Date() });
     } catch (error) {
       console.error('Error updating cell:', error);
-      setWriteState({ status: 'saved' }); // Reset status on error
+      setWriteState({ status: 'saved' });
     }
   }, [document, documentId, user]);
+
+  // Apply a cells snapshot (used by undo/redo)
+  const applyCellsSnapshot = useCallback(async (cells: Record<string, Cell>) => {
+    if (!document || !user) return;
+    setWriteState({ status: 'saving' });
+    try {
+      const evaluatedCells = { ...cells };
+      Object.keys(evaluatedCells).forEach(id => {
+        const cellData = evaluatedCells[id];
+        if (cellData.formula) cellData.computedValue = evaluateFormula(cellData.formula, evaluatedCells);
+      });
+      setAppDocument({ ...document, cells: evaluatedCells });
+      // Persist every changed cell
+      await Promise.all(
+        Object.entries(cells).map(([id, c]) => updateCell(documentId, id, c))
+      );
+      setWriteState({ status: 'saved', lastSaved: new Date() });
+    } catch (e) {
+      setWriteState({ status: 'saved' });
+    }
+  }, [document, documentId, user]);
+
+  const handleUndo = useCallback(() => {
+    if (historyIndexRef.current <= 0) return;
+    historyIndexRef.current -= 1;
+    syncHistoryState();
+    applyCellsSnapshot(historyRef.current[historyIndexRef.current]);
+  }, [applyCellsSnapshot]);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndexRef.current >= historyRef.current.length - 1) return;
+    historyIndexRef.current += 1;
+    syncHistoryState();
+    applyCellsSnapshot(historyRef.current[historyIndexRef.current]);
+  }, [applyCellsSnapshot]);
+
+  // Ctrl+Z / Ctrl+Y global keyboard shortcuts
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleUndo, handleRedo]);
 
 
   const getColumnName = useCallback((index: number): string => {
@@ -142,7 +208,7 @@ function SpreadsheetPageContent() {
       ...Object.keys(cells).map(cellId => {
         const match = cellId.match(/([A-Z]+)/);
         if (!match) return 0;
-        
+
         let col = 0;
         for (let i = 0; i < match[1].length; i++) {
           col = col * 26 + (match[1].charCodeAt(i) - 64);
@@ -152,7 +218,7 @@ function SpreadsheetPageContent() {
     );
 
     const rows: string[][] = [];
-    
+
     for (let row = 1; row <= maxRow; row++) {
       const rowData: string[] = [];
       for (let col = 1; col <= maxCol; col++) {
@@ -185,7 +251,7 @@ function SpreadsheetPageContent() {
   if (loading || !document || !user) {
     const statusLabel = loading ? 'Checking Authentication' : (!user ? 'Authentication Required' : 'Initializing Workspace');
     const statusMessage = loading ? 'Verifying your session...' : (!user ? 'Please sign in to access this spreadsheet.' : 'Fetching the latest data for you...');
-    
+
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="max-w-md w-full glass p-10 rounded-3xl shadow-2xl text-center animate-pulse">
@@ -206,6 +272,8 @@ function SpreadsheetPageContent() {
     );
   }
 
+  const isOwner = user.uid === document.authorId;
+  const canEdit = isOwner || document.linkAccess === 'edit';
   const selectedCellValue = selectedCell ? (document.cells[selectedCell]?.formula || document.cells[selectedCell]?.value || '') : '';
 
   return (
@@ -214,11 +282,39 @@ function SpreadsheetPageContent() {
         writeState={writeState}
         selectedCell={selectedCell}
         onExport={handleExport}
+        onShare={() => setIsShareOpen(true)}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onBack={() => router.push('/')}
         title={document.title}
         document={document}
         onCellUpdate={handleCellUpdate}
       />
-      
+
+      {/* View-only banner — visible to non-editors */}
+      {!canEdit && (
+        <div className="flex items-center px-6 py-1.5 bg-amber-50 border-b border-amber-200 space-x-2 text-amber-700">
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+            />
+          </svg>
+          <span className="text-xs font-bold">View Only — You cannot edit this document. Contact the owner for edit access.</span>
+        </div>
+      )}
+
+      <ShareModal
+        isOpen={isShareOpen}
+        onClose={() => setIsShareOpen(false)}
+        documentId={documentId}
+        documentTitle={document.title}
+        presences={presences}
+        currentLinkAccess={document.linkAccess}
+        isOwner={isOwner}
+      />
+
       {/* Formula Bar */}
       <div className="px-6 py-2 bg-white border-b border-slate-200 flex items-center space-x-4 shadow-sm z-40">
         <div className="flex items-center space-x-2 px-3 py-1 bg-slate-100 rounded-lg">
@@ -227,14 +323,31 @@ function SpreadsheetPageContent() {
         <div className="flex-1 relative">
           <input
             type="text"
-            readOnly
             value={selectedCellValue}
+            onChange={(e) => {
+              if (selectedCell) {
+                const cell = document.cells[selectedCell] || { value: '' };
+                const newValue = e.target.value;
+                const isFormula = newValue.startsWith('=');
+                const updatedCell = {
+                  ...cell,
+                  value: newValue,
+                  ...(isFormula ? { formula: newValue } : {}),
+                };
+                // If it was previously a formula and now isn't, remove formula key
+                if (!isFormula && 'formula' in updatedCell) {
+                  delete (updatedCell as { formula?: string }).formula;
+                }
+                handleCellUpdate(selectedCell, updatedCell);
+              }
+            }}
             placeholder="Select a cell to view or edit its content..."
-            className="w-full px-4 py-1.5 bg-slate-50/50 border border-slate-100 rounded-xl text-sm font-medium text-slate-600 focus:outline-none"
+            readOnly={!canEdit}
+            className="w-full px-4 py-1.5 bg-slate-50/50 border border-slate-100 rounded-xl text-sm font-medium text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
           />
         </div>
       </div>
-      
+
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 flex flex-col p-6 overflow-hidden">
           <SpreadsheetGrid
@@ -242,14 +355,13 @@ function SpreadsheetPageContent() {
             onCellUpdate={handleCellUpdate}
             selectedCell={selectedCell}
             setSelectedCell={setSelectedCell}
+            readOnly={!canEdit}
           />
         </div>
-        
-        <div className="h-full">
-          <PresenceList presences={presences} />
-        </div>
+
+        <PresenceList presences={presences} currentUser={user} />
       </div>
-      
+
       {/* Footer Info */}
       <footer className="px-6 py-2 bg-white border-t border-slate-200 flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
         <div className="flex items-center space-x-4">
