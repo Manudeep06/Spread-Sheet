@@ -26,6 +26,7 @@ export interface Cell {
 export interface CellFormat {
   bold?: boolean;
   italic?: boolean;
+  color?: string;
 }
 
 export interface Presence {

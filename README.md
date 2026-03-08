@@ -8,56 +8,15 @@ A lightweight real-time collaborative spreadsheet web application built with Nex
 - **Spreadsheet Editor**: Grid layout with numbered rows and lettered columns
 - **Real-time Collaboration**: Multiple users can edit simultaneously with instant updates
 - **Formula Support**: Basic formulas including SUM, addition, subtraction, multiplication, and division
+- **Cell Formatting**: Bold, Italic, and Color support (Bonus)
+- **Keyboard Navigation**: Arrows, Tab, and Enter navigation (Bonus)
 - **Write State Indicator**: Shows saving/saved status
 - **Presence System**: Displays active users with their names and colors
 - **Google Authentication**: Secure sign-in with Firebase Auth
-- **CSV Export**: Download spreadsheets as CSV files
+- **CSV Export**: Download spreadsheets as CSV files (Bonus)
 
 ## Tech Stack
-
-- **Next.js 14** with App Router
-- **TypeScript** for type safety
-- **Tailwind CSS** for styling
-- **Firebase** (Firestore + Firebase Auth)
-- **Vercel** for deployment
-
-## Getting Started
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd collaborative-spreadsheet
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Set up Firebase**
-   - Create a new Firebase project at [https://console.firebase.google.com](https://console.firebase.google.com)
-   - Enable Authentication with Google provider
-   - Create a Firestore database
-   - Copy your Firebase configuration
-
-4. **Create environment variables**
-   Create a `.env.local` file in the root directory:
-   ```env
-   NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
-   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-   NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
-   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
-   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-   NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
-   ```
-
-5. **Run the development server**
-   ```bash
-   npm run dev
-   ```
-
-6. **Open your browser**
-   Navigate to [http://localhost:3000](http://localhost:3000)
+...
 
 ## Architectural Decisions
 
@@ -73,6 +32,7 @@ The formula parser (found in `src/app/utils/formulas.ts`) is designed to be ligh
 ### 3. Hydration and Performance
 - **Hydration**: Next.js hydration mismatches (common with dates/times) were resolved by ensuring that locale-specific strings are only rendered after the component has mounted on the client.
 - **Strict TypeScript**: The project maintains 100% TypeScript compliance with no ignored errors, ensuring stability during Vercel deployments.
+- **Bonus Features**: I expanded the `CellFormat` type to include `color` and implemented a toggle in the Toolbar to demonstrate support for "Color per cell" formatting as requested in the bonus territory.
 
 ## Usage
 ... (existing content) ...

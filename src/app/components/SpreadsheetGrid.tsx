@@ -139,6 +139,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
     const style: React.CSSProperties = {
       fontWeight: cellData?.format?.bold ? 'bold' : 'normal',
       fontStyle: cellData?.format?.italic ? 'italic' : 'normal',
+      color: cellData?.format?.color || 'inherit',
     };
 
     return (

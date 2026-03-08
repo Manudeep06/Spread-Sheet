@@ -22,7 +22,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 }) => {
   const selectedCellData = selectedCell ? document.cells[selectedCell] : null;
 
-  const toggleStyle = (style: 'bold' | 'italic') => {
+  const toggleStyle = (style: 'bold' | 'italic' | 'color', value?: string) => {
     if (!selectedCell) return;
     
     const cell = selectedCellData || { value: '' };
@@ -30,6 +30,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     
     if (style === 'bold') newFormat.bold = !newFormat.bold;
     if (style === 'italic') newFormat.italic = !newFormat.italic;
+    if (style === 'color') newFormat.color = newFormat.color === value ? undefined : value;
     
     onCellUpdate(selectedCell, { ...cell, format: newFormat });
   };
@@ -73,6 +74,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               title="Italic"
             >
               I
+            </button>
+            <div className="w-px h-4 bg-slate-200 mx-1"></div>
+            <button
+              onClick={() => toggleStyle('color', '#4f46e5')}
+              className={`p-2 rounded-lg transition-all flex items-center space-x-1 ${
+                selectedCellData?.format?.color === '#4f46e5'
+                  ? 'bg-white text-indigo-600 shadow-sm' 
+                  : 'text-slate-400 hover:text-slate-600'
+              }`}
+              title="Indigo Color"
+            >
+              <div className="w-3 h-3 rounded-full bg-indigo-600"></div>
             </button>
           </div>
 
